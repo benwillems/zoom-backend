@@ -59,8 +59,8 @@ const firebaseJwksUri = `https://www.googleapis.com/robot/v1/metadata/x509/secur
 
 const checkJwt = (req, res, next) => {
   const token = req.headers.authorization?.split(' ')[1] // Assuming Bearer token
-  console.log(req.headers)
-  console.log(token)
+  //console.log(req.headers)
+  //console.log(token)
   if (!token) {
     return res.status(401).send('Authorization token required')
   }
@@ -75,8 +75,8 @@ const checkJwt = (req, res, next) => {
   }
 
   const issuer = decodedToken.payload.iss
-  console.log(issuer)
-  console.log(decodedToken)
+  //console.log(issuer)
+  //console.log(decodedToken)
   if (issuer === auth0Issuer) {
     jwt({
       secret: jwksRsa.expressJwtSecret({
