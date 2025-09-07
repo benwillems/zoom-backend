@@ -91,7 +91,7 @@ exports.createScheduledEventWebhook = async (req, res) => {
       // Webhook request event type is a challenge-response check
         if (req.body.event === 'endpoint.url_validation') {
             const hashForValidate = crypto
-                .createHmac('sha256', process.env.ZOOM_WEBHOOK_SECRET_TOKEN)
+                .createHmac('sha256', process.env.ZOOM_SCHEDULER_WEBHOOK_SECRET_TOKEN)
                 .update(req.body.payload.plainToken)
                 .digest('hex')
 
@@ -117,7 +117,7 @@ exports.cancelScheduledEventWebhook = async (req, res) => {
     try {
         if (req.body.event === 'endpoint.url_validation') {
             const hashForValidate = crypto
-            .createHmac('sha256', process.env.ZOOM_WEBHOOK_SECRET_TOKEN)
+            .createHmac('sha256', process.env.ZOOM_SCHEDULER_WEBHOOK_SECRET_TOKEN)
             .update(req.body.payload.plainToken)
             .digest('hex')
 
