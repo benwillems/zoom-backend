@@ -1503,7 +1503,7 @@ const appointmentTalkingPoints = async ({
     const correctOrder = reorderTalkingPoints(appointment.talkingPoints);
     return correctOrder;
   }
-  throw new NotFoundError('Talking points not found for this appointment');
+  return null; // Return null instead of throwing error for appointments without talking points
 }
 
 function reorderTalkingPoints(response) {

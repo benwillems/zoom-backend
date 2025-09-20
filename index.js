@@ -124,7 +124,7 @@ const checkJwt = (req, res, next) => {
 }
 
 // Move CORS configuration to the top, before other middleware
-const allowedOrigins = [process.env.FE_URL, 'http://127.0.0.1:5500'];
+const allowedOrigins = [process.env.FE_URL, 'http://127.0.0.1:5500', 'http://localhost:3001', 'http://localhost:3000'];
 
 app.use(cors({
     origin: function(origin, callback) {
@@ -156,7 +156,7 @@ app.use((req, res, next) => {
 app.use(express.json()); // Middleware to parse request body
 
 // Use our routes
-// app.use('/api', routes)
+//app.use('/api', routes)
 app.use('/phone/api', phoneRoutes)
 app.use('/api', checkJwt, organizationRoutes);
 app.use('/api', checkJwt, appointmentRoutes)
@@ -213,7 +213,7 @@ async function scheduleClientCheckIns() {
   })
 }
 
-scheduleClientCheckIns()
+ scheduleClientCheckIns() // Commented out for local development
 
 // for scheduling the appointment reminders 
 // schedule.scheduleJob('0 11,23 * * *', async function () {

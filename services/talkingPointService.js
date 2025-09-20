@@ -16,7 +16,7 @@ const {
 
 const prisma = new PrismaClient();
 
-async function generateTalkingPoints({ appointmentId, authSub }) {
+async function generateTalkingPoints({ appointmentId, authSub, templateId = null }) {
   // 0. Resolve coach (user)
   console.log("Generating talking points for appointmentId:", appointmentId);
   const user = await prisma.user.findFirst({
@@ -29,20 +29,21 @@ async function generateTalkingPoints({ appointmentId, authSub }) {
     where: { id: appointmentId },
     include: { client: true },
   });
-  // if (!appointment) throw new NotFoundError('Appointment not found');
-
-  let order = 1;
-  if (!appointment) {
-    let totalAppointments = appointment.leng
-  }
+  if (!appointment) throw new NotFoundError('Appointment not found');
 
   
 
   // 2. Idempotency check
   if (appointment.talkingPointState === TalkingPointState.GENERATING)
     throw new BadRequestError('Talking‑points generation already in progress');
-  if (appointment.talkingPointState === TalkingPointState.GENERATED)
+  
+  // Only return existing talking points if no specific template was requested
+  // If a templateId is provided, we should regenerate with that template
+  if (appointment.talkingPointState === TalkingPointState.GENERATED && 
+      appointment.talkingPoints && 
+      !templateId) {
     return appointment.talkingPoints;
+  }
 
   await prisma.appointment.update({
     where: { id: appointmentId },
@@ -65,13 +66,32 @@ async function generateTalkingPoints({ appointmentId, authSub }) {
     
 
     // Find user's talking point template
-    const template = await prisma.template.findFirst({
-      where: { userId: user.id, type: 'talkingPoint' },
-      include: { defaultTemplate: true }
-    });
-
-    if (!template) {
-      throw new NotFoundError('Talking point template not found');
+    let template;
+    
+    if (templateId) {
+      // Use specific template if provided
+      template = await prisma.template.findFirst({
+        where: { 
+          id: templateId,
+          userId: user.id, 
+          type: 'talkingPoint' 
+        },
+        include: { defaultTemplate: true }
+      });
+      
+      if (!template) {
+        throw new NotFoundError(`Talking point template with ID ${templateId} not found`);
+      }
+    } else {
+      // Use default behavior - find first talking point template
+      template = await prisma.template.findFirst({
+        where: { userId: user.id, type: 'talkingPoint' },
+        include: { defaultTemplate: true }
+      });
+      
+      if (!template) {
+        throw new NotFoundError('Talking point template not found');
+      }
     }
 
     // Determine template ID to use
@@ -85,14 +105,14 @@ async function generateTalkingPoints({ appointmentId, authSub }) {
       return [...template.order].reverse().find(id => id !== -1) || template.id;
     };
 
-    const templateId = getTemplateId();
-    console.log("Template ID to use:", templateId);
+    const resolvedTemplateId = getTemplateId();
+    console.log("Template ID to use:", resolvedTemplateId);
 
     // Get the final template to use
-    const templateToUse = templateId === template.id 
+    const templateToUse = resolvedTemplateId === template.id 
       ? template 
       : await prisma.template.findUnique({
-          where: { id: templateId },
+          where: { id: resolvedTemplateId },
           include: { defaultTemplate: true }
         });
 
@@ -164,9 +184,11 @@ async function generateTalkingPoints({ appointmentId, authSub }) {
       if (!contextText) {
         const defaultCtxProgram = await prisma.defaultContextProgram.findFirst({
           where: {
-            organizationId: user.organizationId,
             programId,
             weekNumber: sessionNumber,
+            defaultContext: {
+              organizationId: user.organizationId,
+            },
           },
           include: {
             defaultContext: true,
@@ -231,4 +253,35 @@ async function generateTalkingPoints({ appointmentId, authSub }) {
   }
 }
 
-module.exports = { generateTalkingPoints };
+async function getTalkingPointTemplates({ authSub }) {
+  // Find the user
+  const user = await prisma.user.findFirst({
+    where: { uniqueAuthId: authSub },
+  });
+  if (!user) throw new NotFoundError('User not found');
+
+  // Get all talking point templates for this user
+  const templates = await prisma.template.findMany({
+    where: { 
+      userId: user.id, 
+      type: 'talkingPoint' 
+    },
+    select: {
+      id: true,
+      name: true,
+      type: true,
+      createdAt: true,
+      updatedAt: true,
+    },
+    orderBy: {
+      name: 'asc'
+    }
+  });
+
+  return templates;
+}
+
+module.exports = { 
+  generateTalkingPoints,
+  getTalkingPointTemplates 
+};

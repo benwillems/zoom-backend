@@ -60,21 +60,36 @@ async function addMissingTemplatesForUsers() {
       for (const defaultTemplate of defaultTemplates) {
         // Check if the user already has this default template
         if (!userTemplateIds.has(defaultTemplate.id)) {
-          // If not, create a new template for the user based on the default template
-          await prisma.template.create({
-            data: {
-              name: defaultTemplate.name,
-              notesTemplate: defaultTemplate.notesTemplate,
-              type: defaultTemplate.type,
+          // Double-check if template already exists to avoid unique constraint error
+          const existingTemplate = await prisma.template.findFirst({
+            where: {
               userId: user.id,
-              organizationId: user.organizationId,
               defaultTemplateId: defaultTemplate.id,
-              default: false, // set to false as it's a user-specific instance of a default template
             },
           })
-          console.log(
-            `Template '${defaultTemplate.name}' added for user ${user.name}.`
-          )
+          
+          if (!existingTemplate) {
+            try {
+              // If not, create a new template for the user based on the default template
+              await prisma.template.create({
+                data: {
+                  name: defaultTemplate.name,
+                  notesTemplate: defaultTemplate.notesTemplate,
+                  type: defaultTemplate.type,
+                  userId: user.id,
+                  organizationId: user.organizationId,
+                  defaultTemplateId: defaultTemplate.id,
+                  default: false, // set to false as it's a user-specific instance of a default template
+                  order: [], // Add required order field
+                },
+              })
+              console.log(
+                `Template '${defaultTemplate.name}' added for user ${user.name}.`
+              )
+            } catch (createError) {
+              console.log(`Failed to create template '${defaultTemplate.name}' for user ${user.name}:`, createError.message)
+            }
+          }
         }
       }
     }
@@ -635,6 +650,38 @@ router.get('/health', async (req, res) => {
   // summary.visit = summaryListToBullet(summary.visit)
   // res.send(summary)
 })
+
+// router.post('/templates', async (req, res) => {
+//   try {
+//     const { name, notesTemplate, type } = req.body;
+    
+//     if (!name || !notesTemplate || !type) {
+//       return res.status(400).json({ error: 'Missing required fields: name, notesTemplate, type' });
+//     }
+
+//     const templateData = {
+//       name,
+//       notesTemplate,
+//       type
+//     };
+
+//     await insertIntoDefaultTemplate(templateData);
+//     res.json({ message: 'Template created successfully', template: templateData });
+//   } catch (error) {
+//     console.error('Error creating template:', error);
+//     res.status(500).json({ error: 'Failed to create template' });
+//   }
+// });
+
+// router.post('/templates/sync', async (req, res) => {
+//   try {
+//     await addMissingTemplatesForUsers();
+//     res.json({ message: 'Missing templates added to all users successfully' });
+//   } catch (error) {
+//     console.error('Error syncing templates:', error);
+//     res.status(500).json({ error: 'Failed to sync templates to users' });
+//   }
+// });
 
 async function getAllAppointments() {
   return await prisma.appointment.findMany()
