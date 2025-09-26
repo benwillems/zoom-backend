@@ -100,6 +100,10 @@ router.post(
 
 router.get('/appointment/:appointmentId/meetingdetails', appointmentController.getMeetingDetails);
 
+router.post(
+  '/appointment/regenerate-notes',
+  appointmentController.regenerateNotesForFailedAppointment
+)
 
 router.post(
   '/appointmentReminder/delete',

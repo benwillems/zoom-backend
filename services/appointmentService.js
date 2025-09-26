@@ -2116,6 +2116,142 @@ const deleteAppointmentReminder = async (reminderId, authSub) => {
   return { message: 'Appointment reminder deleted successfully' };
 };
 
+const regenerateNotesForFailedAppointment = async ({
+  appointmentId,
+  authSub,
+  templateId = null
+}) => {
+  try {
+    // 1. Verify user
+    const user = await prisma.user.findFirst({
+      where: { uniqueAuthId: authSub },
+    })
+    if (!user) {
+      throw new NotFoundError('User not found')
+    }
+
+    // 2. Find appointment and verify it belongs to user's org
+    const appointment = await prisma.appointment.findUnique({
+      where: { id: appointmentId },
+      include: { client: true },
+    })
+    if (!appointment) {
+      throw new NotFoundError('Appointment not found')
+    }
+    if (appointment.organizationId !== user.organizationId) {
+      throw new ForbiddenError('Access denied to this appointment')
+    }
+
+    // 3. Verify appointment is in FAILED status
+    if (appointment.status !== AppointmentStatus.FAILED) {
+      throw new BadRequestError('Can only regenerate notes for failed appointments')
+    }
+
+    // 4. Verify appointment has existing recording/transcription
+    if (!appointment.recordingUrl) {
+      throw new BadRequestError('No recording found for this appointment')
+    }
+
+    // 5. Get transcription from S3
+    console.log('Fetching existing transcription from:', appointment.recordingUrl)
+    const transcriptionData = await s3.getObject({
+      Bucket: bucketName,
+      Key: appointment.recordingUrl,
+    }).promise()
+    const transcription = transcriptionData.Body.toString()
+
+    // 6. Get template (use provided templateId or existing one)
+    const finalTemplateId = templateId || appointment.templateId
+    const template = await prisma.template.findUnique({
+      where: { id: parseInt(finalTemplateId) },
+    })
+    if (!template) {
+      throw new NotFoundError('Template not found')
+    }
+
+    // 7. Update appointment status to GENERATING_NOTES
+    await prisma.appointment.update({
+      where: { id: appointmentId },
+      data: {
+        status: AppointmentStatus.GENERATING_NOTES,
+        templateId: parseInt(finalTemplateId), // Update if new template provided
+      },
+    })
+
+    // 8. Process notes template
+    const notesTemplate = { ...template.notesTemplate }
+    const defaultsForNotes = notesTemplate.defaults
+    const notesOrder = notesTemplate.order ? notesTemplate.order : []
+    
+    delete notesTemplate.defaults
+    delete notesTemplate.order
+
+    // 9. Generate new summary using existing transcription
+    console.log('Regenerating notes with template:', finalTemplateId)
+    let totalSummary = await extractSummaryFromAudioTranscript(
+      transcription,
+      notesTemplate,
+      appointment.client,
+      appointment.isMultiMembers,
+      appointment.talkingPoints
+    )
+
+    // 10. Process talking point scores
+    const totalScore = totalSummary?.talkingPointScore?.score?.total
+    const obtainedScore = totalSummary?.talkingPointScore?.score?.score
+    const talkingPointScore = totalSummary?.talkingPointScore
+
+    function removeTalkingPointScore(data) {
+      let jsonData = typeof data === "string" ? JSON.parse(data) : data
+      if (jsonData?.talkingPointScore) {
+        delete jsonData.talkingPointScore
+      }
+      return jsonData
+    }
+
+    let summary = removeTalkingPointScore(totalSummary)
+    let notes
+    let status
+
+    // 11. Format notes and determine final status
+    if (appointment.isMultiMembers && summary.memberSummaries) {
+      notes = summary
+      status = AppointmentStatus.SUCCEEDED_MULTI
+    } else {
+      notes = summaryListToBullet(summary.visit, notesOrder)
+      status = AppointmentStatus.SUCCEEDED
+    }
+
+    // 12. Update appointment with new notes
+    const finalAppointment = await prisma.appointment.update({
+      where: { id: appointmentId },
+      data: {
+        notes,
+        status,
+        talkingPointScore: talkingPointScore || null,
+        errorReason: null, // Clear previous error
+      },
+    })
+
+    console.log('Successfully regenerated notes for appointment:', appointmentId)
+    return { appointment: finalAppointment }
+
+  } catch (error) {
+    console.error('Error regenerating notes:', error)
+    
+    // Reset appointment to FAILED status with new error reason
+    await prisma.appointment.update({
+      where: { id: appointmentId },
+      data: {
+        status: AppointmentStatus.FAILED,
+        errorReason: `Regeneration failed: ${error.message}`,
+      },
+    })
+    
+    throw error
+  }
+}
+
 module.exports = {
   uploadAppointmentPDF,
   getAppointments,
@@ -2146,4 +2282,5 @@ module.exports = {
   genSignatureService,
   getAppointmentReminder,
   deleteAppointmentReminder,
+  regenerateNotesForFailedAppointment,
 }

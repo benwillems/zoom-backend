@@ -28,7 +28,8 @@ const {
   sendEmailAndUpdateAppointment,
   genSignatureService,
   getAppointmentReminder,
-  deleteAppointmentReminder
+  deleteAppointmentReminder,
+  regenerateNotesForFailedAppointment
 } = require('../services/appointmentService')
 
 const { parseBoolean } = require('../utils/audioAppointmentUtils')
@@ -655,5 +656,29 @@ exports.deleteAppointmentReminder = async (req, res) => {
       return res.status(error.statusCode).send({ error: error.message })
     }
     return res.status(500).json({ error: error.message })
+  }
+}
+
+exports.regenerateNotesForFailedAppointment = async (req, res) => {
+  const { appointmentId, templateId } = req.body
+  const authSub = req.auth?.sub
+
+  if (!appointmentId) {
+    return res.status(400).json({ error: 'appointmentId is required' })
+  }
+
+  try {
+    const result = await regenerateNotesForFailedAppointment({
+      appointmentId: parseInt(appointmentId),
+      authSub,
+      templateId: templateId ? parseInt(templateId) : null
+    })
+    return res.status(200).json(result)
+  } catch (error) {
+    console.error('Error regenerating notes for failed appointment:', error.message)
+    if (error instanceof HttpError) {
+      return res.status(error.statusCode).json({ error: error.message })
+    }
+    return res.status(500).json({ error: 'Failed to regenerate notes' })
   }
 }
